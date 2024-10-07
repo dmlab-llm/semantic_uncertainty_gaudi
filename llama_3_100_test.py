@@ -199,4 +199,4 @@ reslog = "res_log_"+gen
 dataset[results] = result
 dataset[reslog] = result_log
 
-short_dataset.to_csv(path + "_gen_"+gen+".csv")
+dataset.to_csv(path + "_gen_"+gen+".csv")
