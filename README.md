@@ -7,5 +7,5 @@
 
 ### 2. Inference
 '''
-python llama_3_100_test.py {data partition number} {generation number} {hpu number}
+python llama_3_100_test.py {hpu number}
 '''
