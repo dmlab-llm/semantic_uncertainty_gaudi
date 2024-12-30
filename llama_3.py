@@ -26,18 +26,19 @@ from optimum.habana.transformers.modeling_utils import (
                     adapt_transformers_to_gaudi,
                     )
 from tqdm import tqdm
-adapt_transformers_to_gaudi()
+
+# os.environ["PT_HPU_LAZY_MODE"]="0"
 class LlamaModel:
     def __init__(self, model_id_or_path: str):
-        
+        adapt_transformers_to_gaudi()
         self.device = torch.device("hpu")
         self.tokenizer = AutoTokenizer.from_pretrained(model_id_or_path, use_fast=False)
-        hf_config = AutoConfig.from_pretrained(model_id_or_path, torchscript=True, trust_remote_code=False,)
-
+        hf_config = AutoConfig.from_pretrained(model_id_or_path, trust_remote_code=False,) #torchscript=True, 
+        
         # Load the model in Gaudi 
-        model = AutoModelForCausalLM.from_pretrained(model_id_or_path, config=hf_config, torch_dtype=torch.float32)
-        from habana_frameworks.torch.hpu import wrap_in_hpu_graph
-        self.model = wrap_in_hpu_graph(model)
+        model = AutoModelForCausalLM.from_pretrained(model_id_or_path, config=hf_config, torch_dtype=torch.bfloat16)
+        #from habana_frameworks.torch.hpu import wrap_in_hpu_graph
+        #self.model = wrap_in_hpu_graph(model)
         self.model = model.eval().to(self.device)
 
         
@@ -69,7 +70,7 @@ class LlamaModel:
         #    print(outputs)
         full_answer = self.tokenizer.decode(
             outputs.sequences[0], skip_special_tokens=False)
-        print(full_answer)
+        #print(full_answer)
         
         
         if "<|start_header_id|>assistant<|end_header_id|>" in full_answer:
@@ -144,7 +145,7 @@ class LlamaModel:
         transition_scores = self.model.compute_transition_scores(
             outputs.sequences, outputs.scores, normalize_logits=True)
         # Transition_scores[0] only contains the scores for the first generated tokens.
-        print("scores: ", transition_scores)
+        # print("scores: ", transition_scores)
         log_likelihoods = [score.item() for score in transition_scores[0]]
         if len(log_likelihoods) == 1:
             logging.warning('Taking first and only generation for log likelihood!')
@@ -262,61 +263,93 @@ class LlamaModel:
 
         return sliced_answer, log_likelihoods, last_token_embedding
 
-
 def main():
     parser = argparse.ArgumentParser(description="for llama")
+    parser.add_argument('part', help="partition of the data", type=str)
     parser.add_argument('gpu', help='gpu number', type=str)
-
     args = parser.parse_args()
+    part = args.part
     gpu = args.gpu
     os.environ["HABANA_VISIBLE_DEVICES"]=gpu
-    os.environ["PT_HPU_LAZY_MODE"]=0
 
     model = LlamaModel("meta-llama/Meta-Llama-3.1-8B-Instruct")
 
-    path = "/root/datasets/arxiv100.csv"
-    dataset = pd.read_csv(path)
+    path = "/root/datasets/arxiv/arxiv_cs_"+part
 
-    datas = dataset["abstract"][:100]
-    print("data size: ", len(datas))
+    dataset = pd.read_csv(path + ".csv")
+
+    datas = dataset["abstract"]
 
     inputs = []
     input_len_max = 0
 
     start = time()
-    ## first 100 datas for test
-    for i, data in enumerate(datas):
-        if i < 100:
-            messages=[
-                        {"role": "system", "content": "You are an assistant for information extraction tasks. From the given text, what is the most important sentence that contains the meaning of the whole text? Just write the answer. Just print one sentence from the context without any modifications or additional words. Keep the answer concise with no explanations. Print out the sentences in the paragraph without modification."},
-                        {"role": "user", "content": data.replace("\n", " ")}
-                ]
-            prompt = model.tokenizer.apply_chat_template(messages, tokenize=False)
-            print(prompt)
-            inputs.append(prompt + "<|start_header_id|>assistant<|end_header_id|>")
+    for data in datas:
+        summary_messages = [
+            {"role": "system", "content": "You are an assistant for text summarization tasks. Summarize the given text in one sentence containing the meaning of the whole text. The summary has to be shorter than 50 words. Just write the answer. Keep the answer concise."},
+            {"role": "user", "content": data.replace("\n", " ")}
+        ]
+        messages=[
+                {"role": "system", "content": "You are an assistant for information extraction tasks. From the given text, what is the most important sentence that contains the meaning of the whole text? Just write the answer. Just print one sentence from the context without any modifications or additional words. Keep the answer concise with no explanations. Print out the sentences in the paragraph without modification."},
+                {"role": "user", "content": data.replace("\n", " ")}
+            ]
+        prompt = model.tokenizer.apply_chat_template(summary_messages, tokenize=False)
+        # print(prompt)
+        inputs.append(prompt + "<|start_header_id|>assistant<|end_header_id|>")
 
-    print("start generation")
-    result = []
-    result_log = []
+    answers = []
+    logs = []
     for data in tqdm(inputs):
-        predicted_answer, token_log_likelihoods, _ = model.generate(data, 1.0)
-        result.append(predicted_answer)
-        result_log.append(token_log_likelihoods)
-
+        result = []
+        result_log = []
+        for i in range(5):
+            predicted_answer, token_log_likelihoods, _ = model.generate(data, 1.0)
+            result.append(predicted_answer)
+            result_log.append(token_log_likelihoods)
+        answers.append(result)
+        logs.append(result_log)
     end = time()
-
     print("time elapsed: ", end-start)
-
-    print("answer: ", predicted_answer)
-    print("log: ", token_log_likelihoods)
+    
     new_dataset = pd.DataFrame()
     new_dataset["abstract"] = datas
-    results = "res"
-    reslog = "res_log"
-    new_dataset[results] = result
-    new_dataset[reslog] = result_log
+    
+    ans1 = []
+    ans2 = []
+    ans3=[]
+    ans4=[]
+    ans5=[]
+    log1 = []
+    log2 = []
+    log3 = []
+    log4 = []
+    log5 = []
+    for anss, log in zip(answers, logs):
+        ans = anss
+        l = log
+        ans1.append(ans[0])
+        ans2.append(ans[1])
+        ans3.append(ans[2])
+        ans4.append(ans[3])
+        ans5.append(ans[4])
+        log1.append(l[0])
+        log2.append(l[1])
+        log3.append(l[2])
+        log4.append(l[3])
+        log5.append(l[4])
 
-    new_dataset.to_csv("/root/datasets/llama3_arxiv100_compare_100_hpu.csv")
+    new_dataset["0"] = ans1
+    new_dataset["1"] = ans2
+    new_dataset["2"] = ans3
+    new_dataset["3"] = ans4
+    new_dataset["4"] = ans5
 
-if __name__ == "main":
+    new_dataset["log_0"] = log1
+    new_dataset["log_1"] = log2
+    new_dataset["log_2"] = log3
+    new_dataset["log_3"] = log4
+    new_dataset["log_4"] = log5
+    new_dataset.to_csv("/root/datasets/arxiv_gen/llama3_arxiv_summary_"+part+".csv")
+
+if __name__ == "__main__":
     main()
