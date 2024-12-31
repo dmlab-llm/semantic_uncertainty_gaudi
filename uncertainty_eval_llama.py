@@ -87,16 +87,17 @@ def main():
     dataset["uncertainty"] = se
     dataset['semantic_ids'] = semantic_ids
     dataset['num_clusters'] = num_clusters
+    dataset.to_csv("/root/datasets/arxiv_sent/llama3_sent_temp_1_arxiv_semantic_uncertainty_cluster_llama.csv")
 
     
     plt.subplot(211)
-    plt.plot(range(len(se)), sorted(se))
+    plt.scatter(range(len(se)), sorted(se))
     plt.legend()
     plt.xlabel("data index")
     plt.ylabel("semantic uncertainty")
     
     plt.subplot(212)
-    plt.plot(num_clusters, se)
+    plt.scatter(num_clusters, se)
     plt.legend()
     plt.xlabel("number of clusters")
     plt.ylabel("semantic uncertainty")
@@ -105,7 +106,7 @@ def main():
     plt.figure(figsize=(10, 20))
     plt.subplot(211)
     for j in log_liks_agg:
-        plt.plot(range(len(j)), j, colors[i], alpha = 0.5, ms = 3)
+        plt.scatter(range(len(j)), j, alpha = 0.5, ms = 3)
 
     plt.legend()
     plt.xlabel("data generation tokens")
@@ -119,8 +120,7 @@ def main():
 
     plt.savefig("/root/datasets/arxiv_sent/llama3_sent_temp_1_comp_semantic_uncertainty_cluster_llama_2.png")
 
-    dataset.to_csv("/root/datasets/arxiv_sent/llama3_sent_temp_1_arxiv_semantic_uncertainty_cluster_llama.csv")
-
+    
 
 if __name__ == "__main__":
     main()
